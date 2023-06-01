@@ -1,10 +1,6 @@
 import numpy as np
 
-from quadrature import triangle_cuadrature
-from mesh import read_msh
-
-node_coordinates,connection_table=read_msh('L2.msh')
-print(node_coordinates[0])
+from .quadrature import triangle_cuadrature
 
 class FEM_Equation_Solver():
     def __init__(self,node_coordinates,connection_table):
