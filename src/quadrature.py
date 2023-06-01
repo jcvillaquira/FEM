@@ -1,7 +1,10 @@
 
 import os
 import numpy as np
-os.chdir('src/')
+from pathlib import Path
+
+path = Path(__file__).parent.absolute()
+os.chdir(path)
 #points=np.array([[0.5,0.0],[0.5,0.5],[0.0,0.5]])
 #points=points.T
 #weigths=np.array([1.0/3,1.0/3,1.0/3])
@@ -17,8 +20,6 @@ weigths=np.loadtxt('strang4_w.txt')
 
 def triangle_cuadrature(f,vertex):
     A=np.array([vertex[1]-vertex[0],vertex[2]-vertex[0]]).T
-    #print(A)
-    #print(np.dot(A,points))
     points_x,points_y=np.dot(A,points)+np.tile(vertex[0],(points.shape[1],1)).T
     f_points=f(points_x,points_y)
     return np.abs(np.linalg.det(A))*np.sum(weigths*f_points)/2.0
