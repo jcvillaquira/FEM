@@ -5,12 +5,12 @@ def read_msh(name):
     mesh = gmshparser.parse(name)
 
     print(mesh)
-    node_coordinates=np.zeros((mesh.get_number_of_nodes(),3))
+    node_coordinates=np.zeros((mesh.get_number_of_nodes(),2))
     for entity in mesh.get_node_entities():
         for node in entity.get_nodes():
             nid = node.get_tag()
             ncoords = node.get_coordinates()
-            node_coordinates[node.get_tag()-1]=np.array(node.get_coordinates())
+            node_coordinates[node.get_tag()-1]=np.array(node.get_coordinates())[0:2]
             #print("Node id = %s, node coordinates = %s" % (nid, ncoords))
 
 
