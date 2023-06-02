@@ -19,10 +19,17 @@ def read_msh(name):
     pre_Sorted=np.argsort(ind_sorted)
 
     connection_table=[]
+    dirichlet_nodes=[]
 
     for entity in mesh.get_element_entities():
         eltype = entity.get_element_type()
-        #print("Element type: %s" % eltype)
+        
+        print("Element type: %s" % eltype)
+        if eltype==8:
+            for element in entity.get_elements():
+                elcon=element.get_connectivity()
+                con=[pre_Sorted[i-1] for i in elcon]
+                dirichlet_nodes+=con
         if eltype==9:
             for element in entity.get_elements():
                 elid = element.get_tag()
@@ -31,4 +38,4 @@ def read_msh(name):
                 connection_table.append(con)
                 #print("Element id = %s, connectivity = %s" % (elid, elcon))
                 #print(con)
-    return node_coordinates,connection_table
+    return node_coordinates,connection_table,list(set(dirichlet_nodes))
