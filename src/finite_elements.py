@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 from scipy.sparse import coo_matrix,coo_array
 
 import matplotlib
@@ -6,24 +7,29 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.widgets import Slider
 
 
 from .quadrature import triangle_cuadrature
 
 class FEM_Equation_Solver():
-    def __init__(self,node_coordinates,connection_table,dirichlet_nodes):
+    def __init__(self,node_coordinates,connection_table,dirichlet_nodes,c_function,f_function):
         self.node_coordinates=node_coordinates
         self.connection_table=connection_table
         self.dirichlet_nodes=dirichlet_nodes
+        self.c=c_function
+        self.f=f_function
+        basis_coeff=[]
+        for i in range(len(self.connection_table)):
+            basis_coeff.append(self.get_basis_coefficients(self.node_coordinates[self.connection_table[i]]))
+        self.basis_coeff=basis_coeff
+        self.stiffness_matrix=self.assembly_stiffness_matrix()
+        #self.load_vector=self.assembly_load_vector()
+        self.stiffness_I=sp.sparse.linalg.splu(self.stiffness_matrix)
+        #self.sol=self.stiffness_I.solve(self.load_vector)
 
         #self.stiffness_matrix=np.zeros(self.node_coordinates.shape[0])
         #self.stiffness_matrix=coo_matrix(shape=(self.node_coordinates.shape[0], self.node_coordinates.shape[0]))
-
-    def c(self,x,y):
-        return 0.0
-    
-    def f(self,x,y):
-        return -26
     
     def g(self,x,y):
         return 0.0
@@ -92,7 +98,7 @@ class FEM_Equation_Solver():
                 data.append(triangle_cuadrature(f_tot,vertex_coordinates))
         return indx,indy,data
     
-    def get_elemental_load_vector(self,basis_coeff,element_nodes,vertex_coordinates):
+    def get_elemental_load_vector(self,basis_coeff,element_nodes,vertex_coordinates,f_i):
         ind=[]
         data=[]
         for i in range(len(element_nodes)):
@@ -104,7 +110,7 @@ class FEM_Equation_Solver():
                         basis_coeff[i][3]*x+
                         basis_coeff[i][4]*y+
                         basis_coeff[i][5])
-                return t1*self.f(x,y)
+                return t1*f_i(x,y)
             """
             def f_b(x,y):
                 t1=(basis_coeff[i][0]*x+
@@ -115,31 +121,30 @@ class FEM_Equation_Solver():
             ind.append(element_nodes[i])
             data.append(triangle_cuadrature(f_b,vertex_coordinates[:3]))
         return ind,data
-
-
-
-    def assembly_stiffness_matrix_and_load_vector(self):
-        indx=[]
-        indy=[]
-        #indb=[]
-        data=[]
-        #datab=[]
+    
+    def assembly_load_vector(self,f_i):
         b=np.zeros(self.node_coordinates.shape[0])
         for i in range(len(self.connection_table)):
             node_coor=self.node_coordinates[self.connection_table[i]]
-            #print("Elemento ",i ,self.connection_table[i])
-            basis_coeff=self.get_basis_coefficients(node_coor)
-            #print(basis_coeff)
-            indxe,indye,datae=self.get_elemental_matrix(basis_coeff,self.connection_table[i],node_coor[:3])
-            #print(indxe,indye,datae)
-            indbe,databe=self.get_elemental_load_vector(basis_coeff,self.connection_table[i],node_coor[:3])
+            indbe,databe=self.get_elemental_load_vector(self.basis_coeff[i],self.connection_table[i],node_coor[:3],f_i)
             for i in range(len(indbe)):
                 b[indbe[i]]+=databe[i]
+
+        for node in self.dirichlet_nodes:
+            x,y=self.node_coordinates[node]
+            b[node]=self.g(x,y)
+        return b
+
+    def assembly_stiffness_matrix(self):
+        indx=[]
+        indy=[]
+        data=[]
+        for i in range(len(self.connection_table)):
+            node_coor=self.node_coordinates[self.connection_table[i]]
+            indxe,indye,datae=self.get_elemental_matrix(self.basis_coeff[i],self.connection_table[i],node_coor[:3])
             indx+=indxe
             indy+=indye
-            #indb+=indbe
             data+=datae
-            #datab+=databe
         indx=np.array(indx)
         indy=np.array(indy)
         data=np.array(data)
@@ -150,10 +155,8 @@ class FEM_Equation_Solver():
         for node in self.dirichlet_nodes:
             mat[node,:]=0.0
             mat[node,node]=1.0
-            x,y=self.node_coordinates[node]
-            b[node]=self.g(x,y)
 
-        return mat,b
+        return mat
     
     def plot_solution(self,Zs):
         fig = plt.figure()
@@ -172,4 +175,96 @@ class FEM_Equation_Solver():
         fig.tight_layout()
 
         plt.show() # or:
+
+class Heat_Equation_Solver():
+    def __init__(self,node_coordinates,connection_table,dirichlet_nodes,u0,dt,T_fin, f_function):
+        self.node_coordinates=node_coordinates
+        self.connection_table=connection_table
+        self.dirichlet_nodes=dirichlet_nodes
+        self.u0_V=self.u0_project(u0)
+        self.f_function=f_function
+        self.dt=dt
+        self.T_fin=T_fin
+        self.diffusion_const=1.0
+        def c(x,y):
+            return -self.diffusion_const/self.dt
+        def f_init(x,y):
+            return self.f_function(0.0,x,y)
+        self.fem_solver=FEM_Equation_Solver(node_coordinates,connection_table,dirichlet_nodes,c,f_init)
+    
+    def u0_project(self,u0):
+        u0_V=np.zeros((self.node_coordinates.shape[0]))
+        for i in range(len(self.node_coordinates)):
+            x,y=self.node_coordinates[i]
+            u0_V[i]=u0(x,y)
+        return u0_V
+    
+    def f_project(self,t):
+        f_p=np.zeros((self.node_coordinates.shape[0]))
+        for i in range(len(self.node_coordinates)):
+            x,y=self.node_coordinates[i]
+            f_p[i]=self.f_function(t,x,y)
+        return f_p
+    
+    def solve(self):
+        solution=[self.u0_V]
+        t=0.0
+        i=1
+        while t<=self.T_fin:
+            #print(t)
+            #f_pt=self.f_project(t)
+            def f_i(x,y):
+                return self.f_function(t,x,y)
+            f_pt=self.fem_solver.assembly_load_vector(f_i)
+            print(np.max(f_pt))
+            unew=self.fem_solver.stiffness_I.solve(-(solution[-1]/self.dt)-f_pt)
+            solution.append(unew)
+            print(np.max(unew))
+            t+=self.dt 
+            i+=1
+        return np.array(solution)
+    
+    def plot_solution(self,sol):
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        #X,Y=self.eqn.domain.surface_plot_domain()
+
+        Xs=self.node_coordinates[:,0]
+        Ys=self.node_coordinates[:,1]
+
+        surf = ax.plot_trisurf(Xs, Ys, sol[0], cmap=cm.jet, linewidth=0)
+        fig.colorbar(surf)
+
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(6))
+        ax.zaxis.set_major_locator(MaxNLocator(5))
+
+        fig.tight_layout()
+
+        fig.subplots_adjust(bottom=0.25)
+
+        axfreq = fig.add_axes([0.25, 0.1, 0.5, 0.03])
+        freq_slider = Slider(
+            ax=axfreq,
+            label='t',
+            valmin=0.0,
+            valmax=self.T_fin,
+            valinit=0.0,
+            valstep=self.dt
+        )
+        times=np.arange(0,self.T_fin)*self.dt
+
+        def draw(t):  
+            ax.cla()
+            i=np.argmin(np.abs(t-times))
+            ax.plot_trisurf(Xs, Ys, sol[i], cmap=cm.jet, linewidth=0)
+        draw(0)
+        freq_slider.on_changed(draw)
+        return freq_slider
+
+
+
+
+
+
     

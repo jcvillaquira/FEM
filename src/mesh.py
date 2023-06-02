@@ -24,7 +24,7 @@ def read_msh(name):
     for entity in mesh.get_element_entities():
         eltype = entity.get_element_type()
         
-        print("Element type: %s" % eltype)
+        #print("Element type: %s" % eltype)
         if eltype==8:
             for element in entity.get_elements():
                 elcon=element.get_connectivity()
