@@ -122,11 +122,13 @@ class FEM_Equation_Solver():
             data.append(triangle_cuadrature(f_b,vertex_coordinates[:3]))
         return ind,data
     
-    def assembly_load_vector(self,f_i):
+    def assembly_load_vector(self, f_i):
         b=np.zeros(self.node_coordinates.shape[0])
-        for i in range(len(self.connection_table)):
-            node_coor=self.node_coordinates[self.connection_table[i]]
-            indbe,databe=self.get_elemental_load_vector(self.basis_coeff[i],self.connection_table[i],node_coor[:3],f_i)
+        for i, element in enumerate( self.connection_table ):
+            node_coor=self.node_coordinates[element]
+            indbe,databe=self.get_elemental_load_vector(self.basis_coeff[i],
+                                                        self.connection_table[i],
+                                                        node_coor[:3],f_i)
             for i in range(len(indbe)):
                 b[indbe[i]]+=databe[i]
 
@@ -154,6 +156,7 @@ class FEM_Equation_Solver():
 
         for node in self.dirichlet_nodes:
             mat[node,:]=0.0
+            # mat[:, node]=0.0
             mat[node,node]=1.0
 
         return mat
@@ -181,24 +184,28 @@ class Heat_Equation_Solver():
         self.node_coordinates=node_coordinates
         self.connection_table=connection_table
         self.dirichlet_nodes=dirichlet_nodes
-        self.u0_V=self.u0_project(u0)
         self.f_function=f_function
         self.dt=dt
         self.T_fin=T_fin
         self.diffusion_const=1.0
         def c(x,y):
-            return -self.diffusion_const/self.dt
+            return self.diffusion_const/self.dt
         def f_init(x,y):
             return self.f_function(0.0,x,y)
         self.fem_solver=FEM_Equation_Solver(node_coordinates,connection_table,dirichlet_nodes,c,f_init)
+        self.u0_V=self.u0_project(u0)
     
-    def u0_project(self,u0):
+    def u0_project_old(self,u0):
         u0_V=np.zeros((self.node_coordinates.shape[0]))
         for i in range(len(self.node_coordinates)):
             x,y=self.node_coordinates[i]
             u0_V[i]=u0(x,y)
         return u0_V
-    
+
+    def u0_project(self,u0):
+        uv0 = self.fem_solver.assembly_load_vector(u0)
+        return uv0
+
     def f_project(self,t):
         f_p=np.zeros((self.node_coordinates.shape[0]))
         for i in range(len(self.node_coordinates)):
@@ -211,26 +218,22 @@ class Heat_Equation_Solver():
         t=0.0
         i=1
         while t<=self.T_fin:
-            #print(t)
-            #f_pt=self.f_project(t)
             def f_i(x,y):
                 return self.f_function(t,x,y)
             f_pt=self.fem_solver.assembly_load_vector(f_i)
-            print(np.max(f_pt))
-            unew=self.fem_solver.stiffness_I.solve(-(solution[-1]/self.dt)-f_pt)
+            unew=self.fem_solver.stiffness_I.solve((solution[-1]/self.dt)+f_pt)
             solution.append(unew)
             print(np.max(unew))
             t+=self.dt 
             i+=1
         return np.array(solution)
     
-    def plot_solution(self,sol):
+    def plot_solution(self, sol):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
-        #X,Y=self.eqn.domain.surface_plot_domain()
 
-        Xs=self.node_coordinates[:,0]
-        Ys=self.node_coordinates[:,1]
+        Xs = self.node_coordinates[:,0]
+        Ys = self.node_coordinates[:,1]
 
         surf = ax.plot_trisurf(Xs, Ys, sol[0], cmap=cm.jet, linewidth=0)
         fig.colorbar(surf)
