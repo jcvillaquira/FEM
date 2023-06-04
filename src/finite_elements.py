@@ -9,6 +9,9 @@ from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.widgets import Slider
 
+import matplotlib.tri as mtri 
+import scipy.spatial
+
 
 from .quadrature import triangle_cuadrature
 
@@ -255,14 +258,14 @@ class Heat_Equation_Solver():
         self.fem_solver=FEM_Equation_Solver(node_coordinates,connection_table,dirichlet_nodes,c,f_init)
         self.u0_V=self.u0_project(u0)
     
-    def u0_project_old(self,u0):
+    def u0_project(self,u0):
         u0_V=np.zeros((self.node_coordinates.shape[0]))
         for i in range(len(self.node_coordinates)):
             x,y=self.node_coordinates[i]
             u0_V[i]=u0(x,y)
         return u0_V
 
-    def u0_project(self,u0):
+    def u0_project_old(self,u0):
         uv0 = self.fem_solver.assembly_load_vector(u0,force_dirichlet=True)
         return uv0
 
@@ -298,7 +301,25 @@ class Heat_Equation_Solver():
         Xs = self.node_coordinates[:,0]
         Ys = self.node_coordinates[:,1]
 
-        surf = ax.plot_trisurf(Xs, Ys, sol[0], cmap=cm.jet, linewidth=0)
+        pts = np.vstack([Xs, Ys]).T
+        tess = scipy.spatial.Delaunay(pts)
+
+        xx = tess.points[:, 0]
+        yy = tess.points[:, 1]
+        tri = tess.vertices 
+        tri_new=[]
+        for trss in tri:
+            ps=[]
+            for p in trss:
+                if xx[p]==1.0 and yy[p]>1.0:
+                    break
+                else:
+                    ps.append(p)
+            if len(ps)==3:
+                tri_new.append(ps)
+        triDat = mtri.Triangulation(x=pts[:, 0], y=pts[:, 1], triangles=tri_new)
+
+        surf = ax.plot_trisurf(triDat, sol[0], cmap=cm.jet, linewidth=0)
         fig.colorbar(surf)
 
         ax.xaxis.set_major_locator(MaxNLocator(5))
@@ -324,15 +345,17 @@ class Heat_Equation_Solver():
             valstep=self.dt
         )
         times=np.arange(0,self.T_fin,self.dt)
+        vmin=np.min(sol[0])
+        vmax=np.max(sol[0])
 
         def draw(t):  
             ax.cla()
             i=np.argmin(np.abs(times-t))
-            print(i)
+            #print(i)
             ax.set_xlim(0,2)
             ax.set_ylim(0,2)
-            ax.set_zlim(np.min(sol[0]),np.max(sol[0])*1.5)
-            ax.plot_trisurf(Xs, Ys, sol[i], cmap=cm.jet, linewidth=0)
+            ax.set_zlim(vmin,vmax*1.5)
+            ax.plot_trisurf(triDat, sol[i], cmap=cm.jet, linewidth=0,vmin=vmin, vmax=vmax)
         draw(0)
         freq_slider.on_changed(draw)
         return freq_slider
